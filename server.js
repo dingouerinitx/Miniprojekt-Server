@@ -35,18 +35,19 @@ function createGuid() {
     });
 }
 
-function checkAuth(req, res, next) {
-	console.log("checking auth...");
-
-	//console.log(req.headers);
-	//console.log(tokens);
-
+function getSecurityTokenFromHeader(req) {
 	// first try to determine the token from the header
 	// added 2015-11-10 to support .NET (which prohibits POST body in GET request)		
 	var token = { 
 		securityToken: req.headers["x-security-token"],
 		idCustomer: req.headers["x-customer-id"]	
 	}
+	return token;
+}
+
+function getSecurityToken(req) {
+	
+	var token = getSecurityTokenFromHeader(req);
 	
 	if (token.securityToken) {
 		//console.log("got auth values from header...");
@@ -58,7 +59,19 @@ function checkAuth(req, res, next) {
 		if (token.securityToken) {
 			//console.log("got auth values from body...");	
 		}		
-	}	
+	}
+	
+	return token;
+}
+
+
+function checkAuth(req, res, next) {
+	console.log("checking auth...");
+
+	//console.log(req.headers);
+	//console.log(tokens);
+
+	var token = getSecurityToken(req);
 
     if (tokens[token.idCustomer].securityToken == token.securityToken) {
 		console.log("Ok: authorization complete.")
@@ -237,6 +250,49 @@ app.get('/customers', function(req, res) {
     res.json(customers);
 })
 
+app.get('/customers/:id', function(req, res) {
+	console.log('/customers/' + req.params.id + ': GET');
+	var item = findCustomer(req.params.id);
+	return res.json(item);
+});
+
+app.post('/customers/:id', function(req, res) {
+    console.log('/customers/' + req.params.id + ': POST');
+    var customerJson = JSON.parse(req.body.value);
+    var item = findCustomer(req.params.id);
+    if (item != null) {
+		console.log('found customer, updating...');	
+        merge(customerJson, item);
+        wss.broadcast(JSON.stringify({
+            target: 'customer',
+            type: 'update',
+            data: JSON.stringify(item)
+        }));
+        res.json(item);
+    } else {
+		console.log('customer NOT FOUND...');	
+        res.json(false);
+    }
+});
+
+app.del('/customers/:id', function(req, res) {
+    console.log('/customers/' + req.params.id + ': DELETE');	
+	var item = findCustomer(req.params.id);
+    if (item) {
+		//console.log('found customer, removing...');	
+		removeFromArray(customers, item);
+        wss.broadcast(JSON.stringify({
+            target: 'customer',
+            type: 'delete',
+            data: JSON.stringify(item)
+        }));
+        res.json(true);
+    } else {
+		//console.log('customer NOT FOUND...');	
+        res.json(false);
+    }
+});
+
 
 
 function filterLoansPerCustomer(id) {
@@ -292,19 +348,28 @@ app.get('/gadgets', function(req, res) {
     res.json(gadgets);
 });
 
+app.get('/gadgets/:id', function(req, res) {
+	console.log('/gadgets/' + req.params.id + ': GET');
+	var item = findGadget(req.params.id);
+	return res.json(item);
+});
+
+
 app.post('/gadgets/:id', function(req, res) {
     console.log('/gadgets/' + req.params.id + ': POST');
     var gadgetJson = JSON.parse(req.body.value);
     var item = findGadget(req.params.id);
     if (item != null) {
+		//console.log('found gadget, updating...');	
         merge(gadgetJson, item);
         wss.broadcast(JSON.stringify({
             target: 'gadget',
             type: 'update',
             data: JSON.stringify(item)
         }));
-        res.json(JSON.stringify());
+        res.json(item);
     } else {
+		//console.log('gadget NOT FOUND...');	
         res.json(false);
     }
 });
@@ -349,20 +414,27 @@ app.get('/loans', function(req, res) {
     res.json(loans);
 });
 
+app.get('/loans/:id', function(req, res) {
+	console.log('/loans/' + req.params.id + ': GET');
+	var item = findLoan(req.params.id);
+	return res.json(item);
+});
 
 app.post('/loans/:id', function(req, res) {
     console.log('/loans/' + req.params.id + ': POST');
-    var gadgedJson = JSON.parse(req.body.value);
+    var loanJson = JSON.parse(req.body.value);
     var item = findLoan(req.params.id);
     if (item != null) {
-        merge(gadgedJson, item);
+		//console.log('found loan, updating...');
+        merge(loanJson, item);
         wss.broadcast(JSON.stringify({
             target: 'loan',
             type: 'update',
             data: JSON.stringify(item)
         }));
-        res.json(JSON.stringify(item));
+        res.json(item);
     } else {
+		//console.log('loan NOT FOUND...');
         res.json(false);
     }
 });
@@ -400,6 +472,12 @@ app.get('/reservations', function(req, res) {
 });
 
 
+app.get('/reservations/:id', function(req, res) {
+	console.log('/reservations/' + req.params.id + ': GET');
+	var item = findReservation(req.params.id);
+	return res.json(item);
+});
+
 app.post('/reservations/:id', function(req, res) {
     console.log('/reservations/' + req.params.id + ': POST');
     var reservationJson = JSON.parse(req.body.value);
@@ -412,7 +490,7 @@ app.post('/reservations/:id', function(req, res) {
             type: 'update',
             data: JSON.stringify(item)
         }));
-        res.json(JSON.stringify(item));
+        res.json(item);
     } else {
         res.json(false);
     }
@@ -425,7 +503,7 @@ app.del('/reservations/:id', function(req, res) {
 		//console.log('found reservation, removing...');	
 		removeFromArray(reservations, item);
         wss.broadcast(JSON.stringify({
-            target: 'loan',
+            target: 'reservation',
             type: 'delete',
             data: JSON.stringify(item)
         }));
@@ -488,7 +566,7 @@ app.post('/public/login', function(req, res) {
 
 app.get('/public/reservations', checkAuth, function(req, res) {
     console.log('/public/reservation' + ': GET');
-    var securityToken = JSON.parse(req.body.token);
+    var securityToken = getSecurityToken(req);
     var idCustomer = securityToken.customerId;
     var result = JSON.parse(JSON.stringify(filterReservationsPerCustomer(idCustomer)));
 
@@ -496,10 +574,12 @@ app.get('/public/reservations', checkAuth, function(req, res) {
 
     result.forEach(function(entry) {
         entry.gadget = findGadget(entry.gadgetId);
+		// keep miss-spelled name for compatibility with old java admin app:
         entry.watingPosition = getWaitingPositionOfReservation(entry);
-        entry.isReady = !isLent(entry.gadgetId) && entry.watingPosition == 0;
+		entry.waitingPosition = entry.watingPosition;
+        entry.isReady = !isLent(entry.gadgetId) && entry.waitingPosition == 0;
 
-        console.log(entry.watingPosition);
+        console.log(entry.waitingPosition);
         delete entry["gadgetId"];
         delete entry["customerId"];
     });
@@ -511,7 +591,7 @@ app.get('/public/reservations', checkAuth, function(req, res) {
 app.post('/public/logout', checkAuth, function(req, res) {
     console.log('/public/logout' + ': POST');
 
-    var securityToken = JSON.parse(req.body.token);
+    var securityToken = getSecurityToken(req);
     var idCustomer = securityToken.customerId;
 
     if (tokens[idCustomer]) {
@@ -526,7 +606,7 @@ app.post('/public/logout', checkAuth, function(req, res) {
 
 app.get('/public/loans', checkAuth, function(req, res) {
     console.log('/public/loans' + ': GET');
-    var securityToken = JSON.parse(req.body.token);
+    var securityToken = getSecurityToken(req);
     var idCustomer = securityToken.customerId;
     var result = JSON.parse(JSON.stringify(filterLoansPerCustomer(idCustomer)));
 
@@ -544,7 +624,7 @@ app.get('/public/loans', checkAuth, function(req, res) {
 
 app.del('/public/reservations', checkAuth, function(req, res) {
     console.log('/public/reservations' + ': DELETE');
-    var securityToken = JSON.parse(req.body.token);
+    var securityToken = getSecurityToken(req);
     var idCustomer = securityToken.customerId;
     var reservation = findReservation(req.body.id);
 
@@ -564,19 +644,19 @@ app.del('/public/reservations', checkAuth, function(req, res) {
 
 app.post('/public/reservations', checkAuth, function(req, res) {
     console.log('/public/reservation' + ': POST');
-    var securityToken = JSON.parse(req.body.token);
+	console.log(req.body);
+	var securityToken = getSecurityToken(req);
     var gadgetId = req.body.gadgetId;
     var idCustomer = securityToken.customerId;
-
-    var reservation = {
-        id: createGuid(),
-        gadgetId: gadgetId,
-        customerId: idCustomer,
-        reservationDate: new Date().toJSON(),
-        finished: false
-    };
-    res.json(addReservation(JSON.parse(JSON.stringify(reservation))));
-
+	
+	var reservation = {
+		id: createGuid(),
+		gadgetId: gadgetId,
+		customerId: idCustomer,
+		reservationDate: new Date().toJSON(),
+		finished: false
+	};
+	res.json(addReservation(JSON.parse(JSON.stringify(reservation))));
 });
 
 
@@ -646,6 +726,16 @@ function findGadget(inventoryNumber) {
     for (var index = 0; index < gadgets.length; ++index) {
         var item = gadgets[index];
         if (item.inventoryNumber === inventoryNumber) {
+            return item;
+        }
+    }
+    return null;
+}
+
+function findCustomer(studentnumber) {
+    for (var index = 0; index < customers.length; ++index) {
+        var item = customers[index];
+        if (item.studentnumber == studentnumber) {
             return item;
         }
     }
