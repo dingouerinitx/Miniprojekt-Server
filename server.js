@@ -40,7 +40,7 @@ function getSecurityTokenFromHeader(req) {
 	// added 2015-11-10 to support .NET (which prohibits POST body in GET request)		
 	var token = { 
 		securityToken: req.headers["x-security-token"],
-		idCustomer: req.headers["x-customer-id"]	
+		customerId: req.headers["x-customer-id"]	
 	}
 	return token;
 }
@@ -73,7 +73,7 @@ function checkAuth(req, res, next) {
 
 	var token = getSecurityToken(req);
 
-    if (tokens[token.idCustomer].securityToken == token.securityToken) {
+    if (tokens[token.customerId].securityToken == token.securityToken) {
 		console.log("Ok: authorization complete.")
         next();
     } else {
@@ -203,6 +203,7 @@ reservations.push({
 
 
 function addCustomer(customerJson) {
+	console.log("addCustomer");
     if (findCustomerByEmail(customerJson.email)) {
         return false;
     }
@@ -423,7 +424,7 @@ app.get('/loans/:id', function(req, res) {
 app.post('/loans/:id', function(req, res) {
     console.log('/loans/' + req.params.id + ': POST');
     var loanJson = JSON.parse(req.body.value);
-    var item = findLoan(req.params.id);
+    var item = findLoan(req.params.id);	
     if (item != null) {
 		//console.log('found loan, updating...');
         merge(loanJson, item);
@@ -433,6 +434,8 @@ app.post('/loans/:id', function(req, res) {
             data: JSON.stringify(item)
         }));
         res.json(item);
+		
+		console.log(loans);
     } else {
 		//console.log('loan NOT FOUND...');
         res.json(false);
@@ -494,6 +497,8 @@ app.post('/reservations/:id', function(req, res) {
     } else {
         res.json(false);
     }
+	
+	console.log(reservations);
 });
 
 app.del('/reservations/:id', function(req, res) {
@@ -565,12 +570,10 @@ app.post('/public/login', function(req, res) {
 
 
 app.get('/public/reservations', checkAuth, function(req, res) {
-    console.log('/public/reservation' + ': GET');
+    console.log('/public/reservations' + ': GET');
     var securityToken = getSecurityToken(req);
     var idCustomer = securityToken.customerId;
     var result = JSON.parse(JSON.stringify(filterReservationsPerCustomer(idCustomer)));
-
-
 
     result.forEach(function(entry) {
         entry.gadget = findGadget(entry.gadgetId);
@@ -579,7 +582,7 @@ app.get('/public/reservations', checkAuth, function(req, res) {
 		entry.waitingPosition = entry.watingPosition;
         entry.isReady = !isLent(entry.gadgetId) && entry.waitingPosition == 0;
 
-        console.log(entry.waitingPosition);
+        //console.log(entry.waitingPosition);
         delete entry["gadgetId"];
         delete entry["customerId"];
     });
@@ -643,11 +646,13 @@ app.del('/public/reservations', checkAuth, function(req, res) {
 
 
 app.post('/public/reservations', checkAuth, function(req, res) {
-    console.log('/public/reservation' + ': POST');
+    console.log('/public/reservations' + ': POST');
 	console.log(req.body);
 	var securityToken = getSecurityToken(req);
     var gadgetId = req.body.gadgetId;
     var idCustomer = securityToken.customerId;
+	
+	console.log(securityToken);
 	
 	var reservation = {
 		id: createGuid(),
@@ -656,7 +661,11 @@ app.post('/public/reservations', checkAuth, function(req, res) {
 		reservationDate: new Date().toJSON(),
 		finished: false
 	};
+	console.log("BEFORE");
+	console.log(reservations);
 	res.json(addReservation(JSON.parse(JSON.stringify(reservation))));
+	console.log("AFTER");
+	console.log(reservations);
 });
 
 
