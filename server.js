@@ -36,15 +36,35 @@ function createGuid() {
 }
 
 function checkAuth(req, res, next) {
+	console.log("checking auth...");
 
-    console.log(req.body.token);
+	//console.log(req.headers);
+	//console.log(tokens);
 
-    var securityToken = JSON.parse(req.body.token);
-    var idCustomer = securityToken.customerId;
+	// first try to determine the token from the header
+	// added 2015-11-10 to support .NET (which prohibits POST body in GET request)		
+	var token = { 
+		securityToken: req.headers["x-security-token"],
+		idCustomer: req.headers["x-customer-id"]	
+	}
+	
+	if (token.securityToken) {
+		//console.log("got auth values from header...");
+	}
+	else if (req.body) {
+		// now try the message body:
+		token = JSON.parse(req.body.token);
 
-    if (tokens[idCustomer].securityToken == securityToken.securityToken) {
+		if (token.securityToken) {
+			//console.log("got auth values from body...");	
+		}		
+	}	
+
+    if (tokens[token.idCustomer].securityToken == token.securityToken) {
+		console.log("Ok: authorization complete.")
         next();
     } else {
+		console.log("Error: authorization failed.")
         res.send('You are not authorized!');
     }
 }
@@ -201,8 +221,7 @@ function addReservation(reservationJson) {
 }
 
 app.post('/customers', function(req, res) {
-    console.log('customers');
-
+    console.log('/customers: POST');
     var customerJson = JSON.parse(req.body.value);
     customers.push(customerJson);
     wss.broadcast(JSON.stringify({
@@ -214,6 +233,7 @@ app.post('/customers', function(req, res) {
 });
 
 app.get('/customers', function(req, res) {
+	console.log('/customers' + ': GET');
     res.json(customers);
 })
 
@@ -245,9 +265,15 @@ function getWaitingPositionOfReservation(reservation) {
 }
 
 
-app.post('/gadgets', function(req, res) {
-    console.log('gadgets');
+/*
+  ADMIN API (low level access to gadget/loan/reservation databases
+*/
 
+
+app.post('/gadgets', function(req, res) {
+    console.log('/gadgets: POST');
+	console.log(req.body.value);
+	
     var gadgetsJson = JSON.parse(req.body.value);
     gadgets.push(gadgetsJson);
     wss.broadcast(JSON.stringify({
@@ -262,15 +288,16 @@ app.post('/gadgets', function(req, res) {
 
 
 app.get('/gadgets', function(req, res) {
+	console.log('/gadgets' + ': GET');
     res.json(gadgets);
 });
 
 app.post('/gadgets/:id', function(req, res) {
-    console.log('gadgets/id');
-    var gadgedJson = JSON.parse(req.body.value);
+    console.log('/gadgets/' + req.params.id + ': POST');
+    var gadgetJson = JSON.parse(req.body.value);
     var item = findGadget(req.params.id);
     if (item != null) {
-        merge(gadgedJson, item);
+        merge(gadgetJson, item);
         wss.broadcast(JSON.stringify({
             target: 'gadget',
             type: 'update',
@@ -283,10 +310,28 @@ app.post('/gadgets/:id', function(req, res) {
 });
 
 
+app.del('/gadgets/:id', function(req, res) {
+    console.log('/gadgets/' + req.params.id + ': DELETE');	
+	var item = findGadget(req.params.id);
+    if (item) {
+		//console.log('found gadget, removing...');	
+		removeFromArray(gadgets, item);
+        wss.broadcast(JSON.stringify({
+            target: 'gadget',
+            type: 'delete',
+            data: JSON.stringify(item)
+        }));
+        res.json(true);
+    } else {
+		//console.log('gadget NOT FOUND...');	
+        res.json(false);
+    }
+});
+
+
 
 app.post('/loans', function(req, res) {
-    console.log('loans');
-
+    console.log('/loans' + ': POST');
     var loanJson = JSON.parse(req.body.value);
     loans.push(loanJson);
     wss.broadcast(JSON.stringify({
@@ -300,12 +345,13 @@ app.post('/loans', function(req, res) {
 
 
 app.get('/loans', function(req, res) {
+	console.log('/loans' + ': GET');
     res.json(loans);
 });
 
 
 app.post('/loans/:id', function(req, res) {
-    console.log('loans/id');
+    console.log('/loans/' + req.params.id + ': POST');
     var gadgedJson = JSON.parse(req.body.value);
     var item = findLoan(req.params.id);
     if (item != null) {
@@ -321,22 +367,41 @@ app.post('/loans/:id', function(req, res) {
     }
 });
 
+app.del('/loans/:id', function(req, res) {
+    console.log('/loans/' + req.params.id + ': DELETE');	
+	var item = findLoan(req.params.id);
+    if (item) {
+		//console.log('found loan, removing...');	
+		removeFromArray(loans, item);
+        wss.broadcast(JSON.stringify({
+            target: 'loan',
+            type: 'delete',
+            data: JSON.stringify(item)
+        }));
+        res.json(true);
+    } else {
+		//console.log('loan NOT FOUND...');	
+        res.json(false);
+    }
+});
+
 
 
 app.post('/reservations', function(req, res) {
-    console.log('reservations');
+    console.log('/reservations' + ': POST');
     var reservationJson = JSON.parse(req.body.value);
     res.json(addReservation(reservationJson));
 });
 
 
 app.get('/reservations', function(req, res) {
+	console.log('/reservations' + ': GET');	
     res.json(reservations);
 });
 
 
 app.post('/reservations/:id', function(req, res) {
-    console.log('reservationJson/id');
+    console.log('/reservations/' + req.params.id + ': POST');
     var reservationJson = JSON.parse(req.body.value);
     var item = findReservation(req.params.id);
 
@@ -353,10 +418,32 @@ app.post('/reservations/:id', function(req, res) {
     }
 });
 
+app.del('/reservations/:id', function(req, res) {
+    console.log('/reservations/' + req.params.id + ': DELETE');	
+	var item = findReservation(req.params.id);
+    if (item) {
+		//console.log('found reservation, removing...');	
+		removeFromArray(reservations, item);
+        wss.broadcast(JSON.stringify({
+            target: 'loan',
+            type: 'delete',
+            data: JSON.stringify(item)
+        }));
+        res.json(true);
+    } else {
+		//console.log('reservation NOT FOUND...');	
+        res.json(false);
+    }
+});
 
+
+
+/*
+  PUBLIC API
+*/
 
 app.post('/public/register', function(req, res) {
-    console.log('/public/register');
+    console.log('/public/register' + ': POST');
     var name = req.body.name;
     var mail = req.body.email;
     var password = req.body.password;
@@ -372,10 +459,12 @@ app.post('/public/register', function(req, res) {
 });
 
 app.post('/public/login', function(req, res) {
-    console.log('/public/login');
-
+    console.log('/public/login' + ': POST');
+	
     var pwd = req.body.password;
     var mail = req.body.email;
+
+	console.log('got login request for ' + mail);
 
     var item = findCustomerByEmail(mail);
     if (item != null) {
@@ -398,7 +487,7 @@ app.post('/public/login', function(req, res) {
 
 
 app.get('/public/reservations', checkAuth, function(req, res) {
-    console.log('/public/reservation');
+    console.log('/public/reservation' + ': GET');
     var securityToken = JSON.parse(req.body.token);
     var idCustomer = securityToken.customerId;
     var result = JSON.parse(JSON.stringify(filterReservationsPerCustomer(idCustomer)));
@@ -420,7 +509,7 @@ app.get('/public/reservations', checkAuth, function(req, res) {
 
 
 app.post('/public/logout', checkAuth, function(req, res) {
-    console.log('/public/logout');
+    console.log('/public/logout' + ': POST');
 
     var securityToken = JSON.parse(req.body.token);
     var idCustomer = securityToken.customerId;
@@ -436,7 +525,7 @@ app.post('/public/logout', checkAuth, function(req, res) {
 
 
 app.get('/public/loans', checkAuth, function(req, res) {
-    console.log('/public/loans');
+    console.log('/public/loans' + ': GET');
     var securityToken = JSON.parse(req.body.token);
     var idCustomer = securityToken.customerId;
     var result = JSON.parse(JSON.stringify(filterLoansPerCustomer(idCustomer)));
@@ -454,7 +543,7 @@ app.get('/public/loans', checkAuth, function(req, res) {
 
 
 app.del('/public/reservations', checkAuth, function(req, res) {
-    console.log('delete /public/reservations');
+    console.log('/public/reservations' + ': DELETE');
     var securityToken = JSON.parse(req.body.token);
     var idCustomer = securityToken.customerId;
     var reservation = findReservation(req.body.id);
@@ -474,7 +563,7 @@ app.del('/public/reservations', checkAuth, function(req, res) {
 
 
 app.post('/public/reservations', checkAuth, function(req, res) {
-    console.log('/public/reservation');
+    console.log('/public/reservation' + ': POST');
     var securityToken = JSON.parse(req.body.token);
     var gadgetId = req.body.gadgetId;
     var idCustomer = securityToken.customerId;
@@ -492,6 +581,7 @@ app.post('/public/reservations', checkAuth, function(req, res) {
 
 
 app.get('/public/gadgets', checkAuth, function(req, res) {
+	console.log('/public/gadgets' + ': GET');
     res.json(gadgets);
 });
 
@@ -566,6 +656,17 @@ function findCustomerByEmail(email) {
     for (var index = 0; index < customers.length; ++index) {
         var item = customers[index];
         if (item.email == email) {
+            return item;
+        }
+    }
+    return null;
+}
+
+function removeFromArray(array, object) {
+    for (var index = 0; index < array.length; ++index) {
+        var item = array[index];
+        if (item == object) {
+			array.splice(index, 1);
             return item;
         }
     }
