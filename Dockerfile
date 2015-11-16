@@ -1,3 +1,3 @@
-FROM google/nodejs-runtime
+FROM node:onbuild
 
 EXPOSE 8080
